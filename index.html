@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Comisión Vendedor 13%</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body{
+    font-family: Arial, sans-serif;
+    background:#f2f4f7;
+    padding:20px;
+}
+.container{
+    max-width:420px;
+    margin:auto;
+    background:#fff;
+    padding:20px;
+    border-radius:12px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.15);
+}
+h2{
+    text-align:center;
+    margin-bottom:15px;
+}
+label{
+    font-size:14px;
+}
+input{
+    width:100%;
+    padding:10px;
+    margin:6px 0 12px;
+    border-radius:6px;
+    border:1px solid #ccc;
+    font-size:16px;
+}
+button{
+    width:100%;
+    padding:12px;
+    background:#007bff;
+    color:#fff;
+    border:none;
+    border-radius:6px;
+    font-size:16px;
+    cursor:pointer;
+}
+button:hover{ background:#0056b3; }
+.report{
+    white-space:pre-line;
+    background:#f8f9fb;
+    padding:12px;
+    border-radius:8px;
+    margin-top:15px;
+    font-size:14px;
+}
+.total{
+    font-weight:bold;
+    margin-top:8px;
+}
+.copy{
+    margin-top:10px;
+    background:#28a745;
+}
+.copy:hover{ background:#1e7e34; }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+<h2>Comisión Vendedor 13%</h2>
+
+<label>Fecha de la venta</label>
+<input type="date" id="fecha">
+
+<label>Total de la venta (con envío)</label>
+<input type="number" id="totalVenta" placeholder="Ej: 2500">
+
+<label>Costo de envío</label>
+<input type="number" id="costoEnvio" placeholder="Ej: 90">
+
+<label>Rebaja asumida por el vendedor</label>
+<input type="number" id="rebajaVendedor" placeholder="Ej: 50">
+
+<button onclick="agregarVenta()">Agregar venta</button>
+
+<div class="report" id="reporte"></div>
+
+<div class="total">
+Subtotal sin rebajas: L <span id="subtotal">0.00</span>
+</div>
+
+<div class="total">
+Comisión bruta (13%): L <span id="comisionBruta">0.00</span>
+</div>
+
+<div class="total">
+Total rebajas vendedor: L <span id="totalRebajas">0.00</span>
+</div>
+
+<div class="total">
+👉 Ganancia final del vendedor: L <span id="totalComision">0.00</span>
+</div>
+
+<button class="copy" onclick="copiarReporte()">📋 Copiar reporte</button>
+</div>
+
+<script>
+let ventas = {};
+let subtotalGlobal = 0;
+let comisionBrutaGlobal = 0;
+let totalRebajasGlobal = 0;
+let comisionFinalGlobal = 0;
+
+function formatoFecha(fecha){
+    return new Date(fecha + "T00:00:00")
+        .toLocaleDateString('es-HN', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+}
+
+function agregarVenta(){
+    const fecha = document.getElementById("fecha").value;
+    const total = parseFloat(document.getElementById("totalVenta").value);
+    const envio = parseFloat(document.getElementById("costoEnvio").value);
+    const rebaja = parseFloat(document.getElementById("rebajaVendedor").value) || 0;
+
+    if(!fecha || isNaN(total) || isNaN(envio)) return;
+
+    if(!ventas[fecha]) ventas[fecha] = [];
+
+    const base = total - envio;
+    const comision = base * 0.13;
+    const gananciaFinal = comision - rebaja;
+
+    subtotalGlobal += base;
+    comisionBrutaGlobal += comision;
+    totalRebajasGlobal += rebaja;
+    comisionFinalGlobal += gananciaFinal;
+
+    ventas[fecha].push({ total, envio });
+
+    document.getElementById("totalVenta").value = "";
+    document.getElementById("costoEnvio").value = "";
+    document.getElementById("rebajaVendedor").value = "";
+
+    renderReporte();
+}
+
+function renderReporte(){
+    let texto = "";
+
+    Object.keys(ventas)
+        .sort((a,b)=> new Date(a)-new Date(b))
+        .forEach(fecha=>{
+            texto += formatoFecha(fecha) + "\n\n";
+
+            ventas[fecha].forEach((v,i)=>{
+                texto += `Venta #${i+1}\n\n`;
+                texto += `Ventas con envío: L ${v.total.toFixed(2)}\n`;
+                texto += `Costo de envío: L ${v.envio.toFixed(2)}\n`;
+                texto += "--------------------------\n";
+            });
+            texto += "\n";
+        });
+
+    document.getElementById("reporte").textContent = texto;
+    document.getElementById("subtotal").innerText = subtotalGlobal.toFixed(2);
+    document.getElementById("comisionBruta").innerText = comisionBrutaGlobal.toFixed(2);
+    document.getElementById("totalRebajas").innerText = totalRebajasGlobal.toFixed(2);
+    document.getElementById("totalComision").innerText = comisionFinalGlobal.toFixed(2);
+}
+
+function copiarReporte(){
+    const texto =
+        document.getElementById("reporte").textContent +
+        `Subtotal sin rebajas: L ${subtotalGlobal.toFixed(2)}\n` +
+        `Comisión bruta (13%): L ${comisionBrutaGlobal.toFixed(2)}\n` +
+        `Total rebajas vendedor: L ${totalRebajasGlobal.toFixed(2)}\n\n` +
+        `GANANCIA FINAL DEL VENDEDOR: L ${comisionFinalGlobal.toFixed(2)}`;
+
+    navigator.clipboard.writeText(texto);
+    alert("Reporte copiado");
+}
+</script>
+
+</body>
+</html>
