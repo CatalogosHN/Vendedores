@@ -166,11 +166,11 @@ Subtotal sin rebajas: L <span id="subtotal">0.00</span>
 </div>
 
 <div class="total">
-Ganancia (13%): L <span id="gananciaPorcentaje">0.00</span>
+Ganancias (13%): L <span id="gananciaPorcentaje">0.00</span>
 </div>
 
 <div class="total">
-Ganancia fija total: L <span id="gananciaFijaTotal">0.00</span>
+Ganancia Fijas Totales: L <span id="gananciaFijaTotal">0.00</span>
 </div>
 
 <div class="total">
@@ -320,17 +320,23 @@ function cancelarEdicion(){
 function guardarEdicion({fecha, total, envio, rebaja, tipo, gananciaFija, detalle}){
   const { fechaOriginal, index } = editando;
 
-  // Quitar del lugar original
+  // Validar existencia
   const arrOrig = ventas[fechaOriginal] || [];
   const item = arrOrig[index];
   if(!item) return;
 
-  arrOrig.splice(index, 1);
-  if(arrOrig.length === 0) delete ventas[fechaOriginal];
+  // Si la fecha no cambió, solo reemplazamos en el mismo índice (mantiene el orden / Venta #)
+  if(fechaOriginal === fecha){
+    arrOrig[index] = { total, envio, rebaja, tipo, gananciaFija, detalle };
+  }else{
+    // Quitar del lugar original
+    arrOrig.splice(index, 1);
+    if(arrOrig.length === 0) delete ventas[fechaOriginal];
 
-  // Agregar a la fecha nueva (o misma)
-  if(!ventas[fecha]) ventas[fecha] = [];
-  ventas[fecha].push({ total, envio, rebaja, tipo, gananciaFija, detalle });
+    // Agregar a la fecha nueva
+    if(!ventas[fecha]) ventas[fecha] = [];
+    ventas[fecha].push({ total, envio, rebaja, tipo, gananciaFija, detalle });
+  }
 
   editando = null;
   document.getElementById("btnAccion").textContent = "Agregar venta";
@@ -395,7 +401,7 @@ function renderReporte(){
           : `Ganancia (13%): <b>L ${ganancia.toFixed(2)}</b>`;
 
         const detalle = (v.detalle || "").trim();
-        const detalleHtml = detalle ? `<div class="ventaLine"><b>Detalle:</b> ${escapeHtml(detalle)}</div>` : "";
+        const detalleHtml = detalle ? `<div class="ventaLine"><b>Producto/Nota:</b> ${escapeHtml(detalle)}</div>` : "";
 
         html += `
           <div class="ventaItem">
@@ -468,7 +474,12 @@ function copiarReporte(){
 
   const t = calcularTotales();
   texto += `
-Total rebajas vendedor: L ${t.totalRebajas.toFixed(2)}
+Ganancias (13%): L ${t.gananciaPorcentaje.toFixed(2)}
+`;
+  texto += `Ganancia Fijas Totales: L ${t.gananciaFijaTotal.toFixed(2)}
+
+`;
+  texto += `Total rebajas vendedor: L ${t.totalRebajas.toFixed(2)}
 
 `;
   texto += `GANANCIA FINAL DE ${nombre.toUpperCase()}: L ${t.gananciaFinal.toFixed(2)}`;
