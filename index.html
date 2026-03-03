@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Comisión Vendedor 13%</title>
+<title>Ganancias Vendedor</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
@@ -26,13 +26,14 @@ h2{
 label{
     font-size:14px;
 }
-input{
+input, select{
     width:100%;
     padding:10px;
     margin:6px 0 12px;
     border-radius:6px;
     border:1px solid #ccc;
     font-size:16px;
+    box-sizing:border-box;
 }
 button{
     width:100%;
@@ -45,14 +46,63 @@ button{
     cursor:pointer;
 }
 button:hover{ background:#0056b3; }
+
+.btn-row{ display:flex; gap:10px; }
+.btn-row button{ width:100%; }
+
+.secondary{
+    background:#6c757d;
+}
+.secondary:hover{ background:#5a6268; }
+
 .report{
-    white-space:pre-line;
     background:#f8f9fb;
     padding:12px;
     border-radius:8px;
     margin-top:15px;
     font-size:14px;
 }
+.fechaTitulo{
+    font-weight:bold;
+    margin:10px 0 6px;
+    text-transform:capitalize;
+}
+.ventaItem{
+    background:#ffffff;
+    border:1px solid #e3e7ee;
+    border-radius:8px;
+    padding:10px;
+    margin-bottom:10px;
+}
+.ventaHeader{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-weight:bold;
+    margin-bottom:6px;
+}
+.ventaLine{
+    margin:2px 0;
+}
+.accionesVenta{
+    display:flex;
+    gap:8px;
+    margin-top:8px;
+}
+.accionesVenta button{
+    padding:8px 10px;
+    font-size:14px;
+    border-radius:6px;
+}
+.editar{
+    background:#17a2b8;
+}
+.editar:hover{ background:#138496; }
+.eliminar{
+    background:#dc3545;
+}
+.eliminar:hover{ background:#bd2130; }
+
 .total{
     font-weight:bold;
     margin-top:8px;
@@ -62,16 +112,28 @@ button:hover{ background:#0056b3; }
     background:#28a745;
 }
 .copy:hover{ background:#1e7e34; }
+.small-note{
+    font-size:12px;
+    color:#555;
+    margin-top:-6px;
+    margin-bottom:10px;
+}
 </style>
 </head>
 
 <body>
 
 <div class="container">
-<h2>Comisión Vendedor 13%</h2>
+<h2 id="tituloApp">Ganancias del Vendedor</h2>
+
+<label>Ganancias de quién</label>
+<input type="text" id="nombreVendedor" placeholder="Ej: Karol">
 
 <label>Fecha de la venta</label>
 <input type="date" id="fecha">
+
+<label>Producto / Nota (opcional)</label>
+<input type="text" id="detalle" placeholder="Ej: Intercom K06 / Pedido #123">
 
 <label>Total de la venta (con envío)</label>
 <input type="number" id="totalVenta" placeholder="Ej: 2500">
@@ -79,10 +141,23 @@ button:hover{ background:#0056b3; }
 <label>Costo de envío</label>
 <input type="number" id="costoEnvio" placeholder="Ej: 90">
 
+<label>Tipo de ganancia</label>
+<select id="tipoGanancia" onchange="toggleGananciaFija()">
+    <option value="porcentaje">13% (sobre venta sin envío)</option>
+    <option value="fija">Ganancia fija</option>
+</select>
+<div class="small-note">Si eliges “Ganancia fija”, se usará ese monto en lugar del 13%.</div>
+
+<label id="labelGananciaFija" style="display:none;">Ganancia fija (L)</label>
+<input type="number" id="gananciaFija" placeholder="Ej: 150" style="display:none;">
+
 <label>Rebaja asumida por el vendedor</label>
 <input type="number" id="rebajaVendedor" placeholder="Ej: 50">
 
-<button onclick="agregarVenta()">Agregar venta</button>
+<div class="btn-row">
+  <button id="btnAccion" onclick="procesarVenta()">Agregar venta</button>
+  <button id="btnCancelar" class="secondary" style="display:none;" onclick="cancelarEdicion()">Cancelar</button>
+</div>
 
 <div class="report" id="reporte"></div>
 
@@ -91,7 +166,11 @@ Subtotal sin rebajas: L <span id="subtotal">0.00</span>
 </div>
 
 <div class="total">
-Comisión bruta (13%): L <span id="comisionBruta">0.00</span>
+Ganancia (13%): L <span id="gananciaPorcentaje">0.00</span>
+</div>
+
+<div class="total">
+Ganancia fija total: L <span id="gananciaFijaTotal">0.00</span>
 </div>
 
 <div class="total">
@@ -99,87 +178,331 @@ Total rebajas vendedor: L <span id="totalRebajas">0.00</span>
 </div>
 
 <div class="total">
-👉 Ganancia final del vendedor: L <span id="totalComision">0.00</span>
+👉 <span id="labelGananciaFinal">GANANCIA FINAL</span>: L <span id="totalComision">0.00</span>
 </div>
 
 <button class="copy" onclick="copiarReporte()">📋 Copiar reporte</button>
 </div>
 
 <script>
-let ventas = {};
-let subtotalGlobal = 0;
-let comisionBrutaGlobal = 0;
-let totalRebajasGlobal = 0;
-let comisionFinalGlobal = 0;
+let ventas = {}; // { "YYYY-MM-DD": [ {total, envio, rebaja, tipo, gananciaFija, detalle} ] }
+let editando = null; // {fechaOriginal, index}
+let nombre = "Vendedor";
+
+function escapeHtml(str){
+  return String(str || "").replace(/[&<>"']/g, s => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  })[s]);
+}
 
 function formatoFecha(fecha){
     return new Date(fecha + "T00:00:00")
         .toLocaleDateString('es-HN', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
 }
 
-function agregarVenta(){
-    const fecha = document.getElementById("fecha").value;
-    const total = parseFloat(document.getElementById("totalVenta").value);
-    const envio = parseFloat(document.getElementById("costoEnvio").value);
-    const rebaja = parseFloat(document.getElementById("rebajaVendedor").value) || 0;
+function cargarDesdeLocalStorage(){
+  try{
+    const guardado = localStorage.getItem("ventasData");
+    if(guardado){
+      ventas = JSON.parse(guardado) || {};
+    }
+  }catch(e){ ventas = {}; }
 
-    if(!fecha || isNaN(total) || isNaN(envio)) return;
+  const n = (localStorage.getItem("nombreGanancia") || "").trim();
+  if(n){
+    nombre = n;
+  }else{
+    // Pregunta una sola vez si no hay guardado
+    const p = (prompt("¿Ganancias de quién? (Ej: Karol)") || "").trim();
+    nombre = p || "Vendedor";
+    localStorage.setItem("nombreGanancia", nombre);
+  }
+  document.getElementById("nombreVendedor").value = nombre;
+  actualizarLabelGanancia();
+}
 
-    if(!ventas[fecha]) ventas[fecha] = [];
+function guardarEnLocalStorage(){
+  try{
+    localStorage.setItem("ventasData", JSON.stringify(ventas));
+  }catch(e){}
+}
 
-    const base = total - envio;
-    const comision = base * 0.13;
-    const gananciaFinal = comision - rebaja;
+function actualizarLabelGanancia(){
+  const n = (document.getElementById("nombreVendedor").value || "").trim() || "Vendedor";
+  nombre = n;
+  localStorage.setItem("nombreGanancia", nombre);
+  document.getElementById("labelGananciaFinal").textContent = "GANANCIA FINAL DE " + nombre.toUpperCase();
+}
 
-    subtotalGlobal += base;
-    comisionBrutaGlobal += comision;
-    totalRebajasGlobal += rebaja;
-    comisionFinalGlobal += gananciaFinal;
+document.getElementById("nombreVendedor").addEventListener("input", actualizarLabelGanancia);
 
-    ventas[fecha].push({ total, envio });
+function toggleGananciaFija(){
+  const tipo = document.getElementById("tipoGanancia").value;
+  const show = tipo === "fija";
+  document.getElementById("labelGananciaFija").style.display = show ? "block" : "none";
+  document.getElementById("gananciaFija").style.display = show ? "block" : "none";
+}
 
-    document.getElementById("totalVenta").value = "";
-    document.getElementById("costoEnvio").value = "";
-    document.getElementById("rebajaVendedor").value = "";
+function obtenerDatosFormulario(){
+  const fecha = document.getElementById("fecha").value;
+  const total = parseFloat(document.getElementById("totalVenta").value);
+  const envio = parseFloat(document.getElementById("costoEnvio").value);
+  const rebaja = parseFloat(document.getElementById("rebajaVendedor").value) || 0;
+  const tipo = document.getElementById("tipoGanancia").value;
+  const gananciaFija = parseFloat(document.getElementById("gananciaFija").value);
+  const detalle = (document.getElementById("detalle").value || "").trim();
 
-    renderReporte();
+  if(!fecha || isNaN(total) || isNaN(envio)) return null;
+  if(tipo === "fija" && isNaN(gananciaFija)) return null;
+
+  return { fecha, total, envio, rebaja, tipo, gananciaFija: (tipo==="fija" ? gananciaFija : null), detalle };
+}
+
+function limpiarFormulario(){
+  document.getElementById("totalVenta").value = "";
+  document.getElementById("costoEnvio").value = "";
+  document.getElementById("rebajaVendedor").value = "";
+  document.getElementById("gananciaFija").value = "";
+  document.getElementById("detalle").value = "";
+  document.getElementById("tipoGanancia").value = "porcentaje";
+  toggleGananciaFija();
+}
+
+function procesarVenta(){
+  const data = obtenerDatosFormulario();
+  if(!data){
+    alert(`Faltan datos. Asegúrate de poner: fecha, total y costo de envío.
+Si elegiste “Ganancia fija”, escribe también el monto de la ganancia fija.`);
+    return;
+  }
+if(editando){
+    guardarEdicion(data);
+  }else{
+    agregarVenta(data);
+  }
+}
+
+function agregarVenta({fecha, total, envio, rebaja, tipo, gananciaFija, detalle}){
+  if(!ventas[fecha]) ventas[fecha] = [];
+  ventas[fecha].push({ total, envio, rebaja, tipo, gananciaFija, detalle });
+  guardarEnLocalStorage();
+  limpiarFormulario();
+  renderReporte();
+}
+
+function editarVenta(fecha, index){
+  const v = (ventas[fecha] || [])[index];
+  if(!v) return;
+
+  editando = { fechaOriginal: fecha, index };
+
+  document.getElementById("fecha").value = fecha;
+  document.getElementById("totalVenta").value = v.total;
+  document.getElementById("costoEnvio").value = v.envio;
+  document.getElementById("rebajaVendedor").value = v.rebaja || 0;
+  document.getElementById("detalle").value = v.detalle || "";
+  document.getElementById("tipoGanancia").value = v.tipo || "porcentaje";
+  toggleGananciaFija();
+  document.getElementById("gananciaFija").value = (v.gananciaFija != null) ? v.gananciaFija : "";
+
+  document.getElementById("btnAccion").textContent = "Guardar cambios";
+  document.getElementById("btnCancelar").style.display = "block";
+  window.scrollTo({top:0, behavior:"smooth"});
+}
+
+function cancelarEdicion(){
+  editando = null;
+  document.getElementById("btnAccion").textContent = "Agregar venta";
+  document.getElementById("btnCancelar").style.display = "none";
+  limpiarFormulario();
+}
+
+function guardarEdicion({fecha, total, envio, rebaja, tipo, gananciaFija, detalle}){
+  const { fechaOriginal, index } = editando;
+
+  // Quitar del lugar original
+  const arrOrig = ventas[fechaOriginal] || [];
+  const item = arrOrig[index];
+  if(!item) return;
+
+  arrOrig.splice(index, 1);
+  if(arrOrig.length === 0) delete ventas[fechaOriginal];
+
+  // Agregar a la fecha nueva (o misma)
+  if(!ventas[fecha]) ventas[fecha] = [];
+  ventas[fecha].push({ total, envio, rebaja, tipo, gananciaFija, detalle });
+
+  editando = null;
+  document.getElementById("btnAccion").textContent = "Agregar venta";
+  document.getElementById("btnCancelar").style.display = "none";
+
+  guardarEnLocalStorage();
+  limpiarFormulario();
+  renderReporte();
+}
+
+function eliminarVenta(fecha, index){
+  if(!ventas[fecha]) return;
+  ventas[fecha].splice(index, 1);
+  if(ventas[fecha].length === 0) delete ventas[fecha];
+  guardarEnLocalStorage();
+  renderReporte();
+}
+
+function calcularTotales(){
+  let subtotal = 0;
+  let gananciaPorcentaje = 0;
+  let gananciaFijaTotal = 0;
+  let totalRebajas = 0;
+
+  Object.keys(ventas).forEach(f=>{
+    ventas[f].forEach(v=>{
+      const base = (parseFloat(v.total) - parseFloat(v.envio));
+      subtotal += base;
+
+      if(v.tipo === "fija"){
+        gananciaFijaTotal += (parseFloat(v.gananciaFija) || 0);
+      }else{
+        gananciaPorcentaje += (base * 0.13);
+      }
+
+      totalRebajas += (parseFloat(v.rebaja) || 0);
+    });
+  });
+
+  const gananciaFinal = (gananciaPorcentaje + gananciaFijaTotal) - totalRebajas;
+  return { subtotal, gananciaPorcentaje, gananciaFijaTotal, totalRebajas, gananciaFinal };
 }
 
 function renderReporte(){
-    let texto = "";
+  actualizarLabelGanancia();
 
-    Object.keys(ventas)
-        .sort((a,b)=> new Date(a)-new Date(b))
-        .forEach(fecha=>{
-            texto += formatoFecha(fecha) + "\n\n";
+  const reporte = document.getElementById("reporte");
+  const fechas = Object.keys(ventas).sort((a,b)=> new Date(a)-new Date(b));
 
-            ventas[fecha].forEach((v,i)=>{
-                texto += `Venta #${i+1}\n\n`;
-                texto += `Ventas con envío: L ${v.total.toFixed(2)}\n`;
-                texto += `Costo de envío: L ${v.envio.toFixed(2)}\n`;
-                texto += "--------------------------\n";
-            });
-            texto += "\n";
-        });
+  if(fechas.length === 0){
+    reporte.innerHTML = "<div style='color:#666;'>Aún no hay ventas registradas.</div>";
+  }else{
+    let html = "";
+    fechas.forEach(fecha=>{
+      html += `<div class="fechaTitulo">${escapeHtml(formatoFecha(fecha))}</div>`;
+      ventas[fecha].forEach((v,i)=>{
+        const base = (parseFloat(v.total) - parseFloat(v.envio));
+        const ganancia = (v.tipo === "fija") ? (parseFloat(v.gananciaFija) || 0) : (base * 0.13);
 
-    document.getElementById("reporte").textContent = texto;
-    document.getElementById("subtotal").innerText = subtotalGlobal.toFixed(2);
-    document.getElementById("comisionBruta").innerText = comisionBrutaGlobal.toFixed(2);
-    document.getElementById("totalRebajas").innerText = totalRebajasGlobal.toFixed(2);
-    document.getElementById("totalComision").innerText = comisionFinalGlobal.toFixed(2);
+        const etiquetaGanancia = (v.tipo === "fija")
+          ? `Ganancia fija: <b>L ${ganancia.toFixed(2)}</b>`
+          : `Ganancia (13%): <b>L ${ganancia.toFixed(2)}</b>`;
+
+        const detalle = (v.detalle || "").trim();
+        const detalleHtml = detalle ? `<div class="ventaLine"><b>Detalle:</b> ${escapeHtml(detalle)}</div>` : "";
+
+        html += `
+          <div class="ventaItem">
+            <div class="ventaHeader">
+              <div>Venta #${i+1}</div>
+            </div>
+            ${detalleHtml}
+            <div class="ventaLine">Ventas con envío: <b>L ${parseFloat(v.total).toFixed(2)}</b></div>
+            <div class="ventaLine">Costo de envío: L ${parseFloat(v.envio).toFixed(2)}</div>
+            <div class="ventaLine">${etiquetaGanancia}</div>
+
+            <div class="accionesVenta">
+              <button class="editar" onclick="editarVenta('${fecha}', ${i})">✏️ Editar</button>
+              <button class="eliminar" onclick="eliminarVenta('${fecha}', ${i})">🗑️ Eliminar</button>
+            </div>
+          </div>
+        `;
+      });
+    });
+    reporte.innerHTML = html;
+  }
+
+  const t = calcularTotales();
+  document.getElementById("subtotal").innerText = t.subtotal.toFixed(2);
+  document.getElementById("gananciaPorcentaje").innerText = t.gananciaPorcentaje.toFixed(2);
+  document.getElementById("gananciaFijaTotal").innerText = t.gananciaFijaTotal.toFixed(2);
+  document.getElementById("totalRebajas").innerText = t.totalRebajas.toFixed(2);
+  document.getElementById("totalComision").innerText = t.gananciaFinal.toFixed(2);
 }
 
 function copiarReporte(){
-    const texto =
-        document.getElementById("reporte").textContent +
-        `Subtotal sin rebajas: L ${subtotalGlobal.toFixed(2)}\n` +
-        `Comisión bruta (13%): L ${comisionBrutaGlobal.toFixed(2)}\n` +
-        `Total rebajas vendedor: L ${totalRebajasGlobal.toFixed(2)}\n\n` +
-        `GANANCIA FINAL DEL VENDEDOR: L ${comisionFinalGlobal.toFixed(2)}`;
+  actualizarLabelGanancia();
 
-    navigator.clipboard.writeText(texto);
-    alert("Reporte copiado");
+  const fechas = Object.keys(ventas).sort((a,b)=> new Date(a)-new Date(b));
+  let texto = "";
+
+  fechas.forEach(fecha=>{
+    texto += `${formatoFecha(fecha)}
+
+`;
+    ventas[fecha].forEach((v,i)=>{
+      const base = (parseFloat(v.total) - parseFloat(v.envio));
+      const ganancia = (v.tipo === "fija") ? (parseFloat(v.gananciaFija) || 0) : (base * 0.13);
+      const detalle = (v.detalle || "").trim();
+
+      texto += `Venta #${i+1}
+
+`;
+      if(detalle){
+        texto += `Producto/Nota: ${detalle}
+`;
+      }
+      texto += `Ventas con envío: L ${parseFloat(v.total).toFixed(2)}
+`;
+      texto += `Costo de envío: L ${parseFloat(v.envio).toFixed(2)}
+`;
+      if(v.tipo === "fija"){
+        texto += `Ganancia fija: L ${ganancia.toFixed(2)}
+`;
+      }else{
+        texto += `Ganancia (13%): L ${ganancia.toFixed(2)}
+`;
+      }
+      texto += `--------------------------
+`;
+    });
+    texto += `
+`;
+  });
+
+  const t = calcularTotales();
+  texto += `
+Total rebajas vendedor: L ${t.totalRebajas.toFixed(2)}
+
+`;
+  texto += `GANANCIA FINAL DE ${nombre.toUpperCase()}: L ${t.gananciaFinal.toFixed(2)}`;
+
+  // Copiar: navigator.clipboard requiere HTTPS; si no, usamos fallback.
+  if(navigator.clipboard && window.isSecureContext){
+    navigator.clipboard.writeText(texto).then(()=> alert("Reporte copiado")).catch(()=> fallbackCopy(texto));
+  }else{
+    fallbackCopy(texto);
+  }
 }
+
+function fallbackCopy(texto){
+  const ta = document.createElement("textarea");
+  ta.value = texto;
+  ta.style.position = "fixed";
+  ta.style.top = "-1000px";
+  ta.style.left = "-1000px";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try{
+    document.execCommand("copy");
+    alert("Reporte copiado");
+  }catch(e){
+    alert("No se pudo copiar automáticamente. Selecciona y copia manualmente.");
+  }
+  document.body.removeChild(ta);
+}
+
+// Iniciar
+cargarDesdeLocalStorage();
+toggleGananciaFija();
+renderReporte();
 </script>
 
 </body>
